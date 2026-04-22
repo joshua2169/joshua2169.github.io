@@ -16,18 +16,21 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+            align-items: stretch;
+            justify-content: flex-start;
+            padding: 0;
         }
 
         .container {
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
-            max-width: 800px;
+            border-radius: 0;
+            box-shadow: none;
+            padding: 20px;
+            max-width: 100%;
             width: 100%;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
 
         h1 {
@@ -53,7 +56,7 @@
             font-weight: 500;
         }
 
-        input[type="url"] {
+        input[type="text"], .browser-url {
             width: 100%;
             padding: 12px;
             border: 2px solid #e0e0e0;
@@ -62,9 +65,36 @@
             transition: border-color 0.3s;
         }
 
-        input[type="url"]:focus {
+        input[type="text"]:focus, .browser-url:focus {
             outline: none;
             border-color: #667eea;
+        }
+
+        .browser-toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+
+        .browser-url {
+            flex: 1;
+        }
+
+        .browser-action {
+            background: #2196f3;
+            color: white;
+            padding: 10px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .browser-action:hover {
+            background: #1976d2;
         }
 
         button {
@@ -118,9 +148,12 @@
 
         .results {
             display: none;
-            margin-top: 30px;
-            padding-top: 30px;
+            margin-top: 20px;
+            padding-top: 20px;
             border-top: 2px solid #e0e0e0;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
         }
 
         .results h3 {
@@ -128,17 +161,30 @@
             margin-bottom: 15px;
         }
 
+        .browser-toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .browser-url {
+            width: 100%;
+        }
+
         .response-section {
-            background: #f5f5f5;
-            padding: 15px;
+            background: white;
             border-radius: 6px;
-            margin-bottom: 15px;
-            max-height: 400px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            white-space: pre-wrap;
-            word-break: break-all;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: white;
         }
 
         .error {
@@ -201,9 +247,9 @@
             <div class="form-group">
                 <label for="targetUrl">Website URL:</label>
                 <input
-                    type="url"
+                    type="text"
                     id="targetUrl"
-                    placeholder="https://example.com"
+                    placeholder="https://example.com or example.com"
                     required
                 >
             </div>
@@ -217,9 +263,13 @@
         </div>
 
         <div class="results" id="results">
-            <h3>Response:</h3>
-            <div class="response-section" id="responseBody"></div>
-            <button class="copy-btn" id="copyBtn">📋 Copy Response</button>
+            <h3>Proxy Browser</h3>
+            <div class="browser-toolbar">
+                <input id="browserUrl" class="browser-url" type="text" readonly>
+                <button id="reloadBtn" class="browser-action" type="button">Reload</button>
+                <a id="openNewTab" class="browser-action" href="#" target="_blank">Open in new tab</a>
+            </div>
+            <iframe id="responseBody" class="response-section"></iframe>
         </div>
 
         <div id="alert"></div>
@@ -232,14 +282,48 @@
         const results = document.getElementById('results');
         const responseBody = document.getElementById('responseBody');
         const alertDiv = document.getElementById('alert');
-        const copyBtn = document.getElementById('copyBtn');
+        const browserUrl = document.getElementById('browserUrl');
+        const openNewTab = document.getElementById('openNewTab');
+        const reloadBtn = document.getElementById('reloadBtn');
 
-        form.addEventListener('submit', async (e) => {
+        // Handle navigation messages from iframe
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'navigate') {
+                const targetUrl = event.data.url;
+                console.log('Iframe navigation request:', targetUrl);
+
+                // Update the browser URL display
+                try {
+                    const url = new URL(targetUrl);
+                    browserUrl.value = url.href;
+                } catch (err) {
+                    browserUrl.value = targetUrl;
+                }
+
+                // Navigate the iframe to the proxied URL
+                const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+                openNewTab.href = proxyUrl;
+                responseBody.src = proxyUrl;
+            }
+        });
+
+        form.addEventListener('submit', (e) => {
             e.preventDefault();
 
-            const targetUrl = targetUrlInput.value.trim();
+            let targetUrl = targetUrlInput.value.trim();
 
             if (!targetUrl) {
+                showAlert('Please enter a website URL', 'error');
+                return;
+            }
+
+            if (!/^https?:\/\//i.test(targetUrl)) {
+                targetUrl = `https://${targetUrl}`;
+            }
+
+            try {
+                new URL(targetUrl);
+            } catch (err) {
                 showAlert('Please enter a valid URL', 'error');
                 return;
             }
@@ -248,44 +332,42 @@
             results.style.display = 'none';
             alertDiv.innerHTML = '';
 
-            try {
-                console.log('Fetching from:', targetUrl);
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+            browserUrl.value = targetUrl;
+            openNewTab.href = proxyUrl;
+            responseBody.src = proxyUrl;
 
-                const response = await fetch(targetUrl);
+            results.style.display = 'flex';
 
-                if (!response.ok) {
-                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-                }
-
-                const contentType = response.headers.get('content-type');
-
-                let content;
-                if (contentType && contentType.includes('application/json')) {
-                    const json = await response.json();
-                    content = JSON.stringify(json, null, 2);
-                } else {
-                    content = await response.text();
-                }
-
-                responseBody.textContent = content;
-                results.style.display = 'block';
-                showAlert('✅ Request successful!', 'success');
-
-            } catch (error) {
-                console.error('Proxy error:', error);
-                showAlert(`❌ Error: ${error.message}`, 'error');
-            } finally {
+            responseBody.onload = () => {
                 loading.style.display = 'none';
-            }
+                console.log('✅ Iframe loaded successfully');
+                showAlert('✅ Page loaded successfully', 'success');
+            };
+
+            responseBody.onerror = () => {
+                loading.style.display = 'none';
+                console.error('❌ Iframe failed to load');
+                showAlert('❌ Page failed to load in iframe - trying direct navigation', 'error');
+            };
+
+            // Set iframe onload/onerror early
+            responseBody.addEventListener('load', () => {
+                loading.style.display = 'none';
+                console.log('Frame loaded');
+            });
+
+            responseBody.addEventListener('error', () => {
+                loading.style.display = 'none';
+                console.error('Frame error');
+            });
         });
 
-        copyBtn.addEventListener('click', () => {
-            const text = responseBody.textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                showAlert('✅ Copied to clipboard!', 'success');
-            }).catch(err => {
-                showAlert('❌ Failed to copy', 'error');
-            });
+        reloadBtn.addEventListener('click', () => {
+            if (responseBody.src) {
+                loading.style.display = 'block';
+                responseBody.contentWindow.location.reload();
+            }
         });
 
         function showAlert(message, type) {
@@ -302,269 +384,6 @@
 
         // Pre-fill with example
         targetUrlInput.placeholder = 'https://api.github.com/zen';
-    </script>
-</body>
-</html>
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 500;
-        }
-
-        input[type="url"],
-        input[type="text"] {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-
-        input[type="url"]:focus,
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 30px;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            width: 100%;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        button:active {
-            transform: translateY(0);
-        }
-
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .loading {
-            display: none;
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .results {
-            display: none;
-            margin-top: 30px;
-            padding-top: 30px;
-            border-top: 2px solid #e0e0e0;
-        }
-
-        .results h3 {
-            color: #333;
-            margin-bottom: 15px;
-        }
-
-        .response-section {
-            background: #f5f5f5;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 15px;
-            max-height: 400px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-
-        .error {
-            color: #d32f2f;
-            background: #ffebee;
-            padding: 15px;
-            border-radius: 6px;
-            margin-top: 20px;
-            border-left: 4px solid #d32f2f;
-        }
-
-        .success {
-            color: #388e3c;
-            background: #e8f5e9;
-            padding: 15px;
-            border-radius: 6px;
-            margin-top: 20px;
-            border-left: 4px solid #388e3c;
-        }
-
-        .info-box {
-            background: #e3f2fd;
-            border-left: 4px solid #2196f3;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            font-size: 13px;
-            color: #1565c0;
-        }
-
-        .info-box strong {
-            display: block;
-            margin-bottom: 8px;
-        }
-
-        .copy-btn {
-            background: #2196f3;
-            padding: 8px 16px;
-            font-size: 12px;
-            margin-top: 10px;
-            width: auto;
-        }
-
-        .copy-btn:hover {
-            box-shadow: 0 5px 15px rgba(33, 150, 243, 0.3);
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🌐 HTTP Proxy Tool</h1>
-        <p class="subtitle">For testing and accessing web resources</p>
-
-        <div class="info-box">
-            <strong>ℹ️ How to use:</strong>
-            Enter any URL below to proxy the request through our server. Works with APIs, websites, and more!
-        </div>
-
-        <form id="proxyForm">
-            <div class="form-group">
-                <label for="targetUrl">Target URL:</label>
-                <input 
-                    type="url" 
-                    id="targetUrl" 
-                    placeholder="https://example.com" 
-                    required
-                >
-            </div>
-
-            <button type="submit">Fetch Content</button>
-        </form>
-
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p style="margin-top: 15px; color: #666;">Fetching content...</p>
-        </div>
-
-        <div class="results" id="results">
-            <h3>Response:</h3>
-            <div class="response-section" id="responseBody"></div>
-            <button class="copy-btn" id="copyBtn">📋 Copy Response</button>
-        </div>
-
-        <div id="alert"></div>
-    </div>
-
-    <script>
-        const form = document.getElementById('proxyForm');
-        const targetUrlInput = document.getElementById('targetUrl');
-        const loading = document.getElementById('loading');
-        const results = document.getElementById('results');
-        const responseBody = document.getElementById('responseBody');
-        const alertDiv = document.getElementById('alert');
-        const copyBtn = document.getElementById('copyBtn');
-
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const targetUrl = targetUrlInput.value.trim();
-
-            if (!targetUrl) {
-                showAlert('Please enter a valid URL', 'error');
-                return;
-            }
-
-            loading.style.display = 'block';
-            results.style.display = 'none';
-            alertDiv.innerHTML = '';
-
-            try {
-                // Use BARE protocol to fetch
-                const proxyUrl = `/bare/?url=${encodeURIComponent(targetUrl)}`;
-                
-                console.log('Fetching:', targetUrl);
-
-                const response = await fetch(proxyUrl, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const contentType = response.headers.get('content-type') || '';
-
-                let content;
-                if (contentType.includes('application/json')) {
-                    try {
-                        const json = await response.json();
-                        content = JSON.stringify(json, null, 2);
-                    } catch (e) {
-                        content = await response.text();
-                    }
-                } else {
-                    content = await response.text();
-                }
-
-                responseBody.textContent = content || '(empty response)';
-                results.style.display = 'block';
-                showAlert('✅ Request successful!', 'success');
-
-            } catch (error) {
-                console.error('Error:', error);
-                showAlert(`❌ Error: ${error.message}`, 'error');
-            } finally {
-                loading.style.display = 'none';
-            }
-        });
-
-        copyBtn.addEventListener('click', () => {
-            const text = responseBody.textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                showAlert('✅ Copied to clipboard!', 'success');
-            }).catch(err => {
-                showAlert('❌ Failed to copy', 'error');
-            });
-        });
-
-        function showAlert(message, type) {
-            const div = document.createElement('div');
-            div.className = type;
-            div.textContent = message;
-            alertDiv.innerHTML = '';
-            alertDiv.appendChild(div);
-        }
     </script>
 </body>
 </html>

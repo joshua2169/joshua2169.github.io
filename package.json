@@ -13,7 +13,8 @@
   "license": "MIT",
   "dependencies": {
     "@nebula-services/bare-server-node": "^2.0.4",
-    "express": "^4.21.2",
-    "cors": "^2.8.5"
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
   }
 }
